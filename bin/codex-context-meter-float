@@ -79,7 +79,7 @@ class FloatMeter(tk.Tk):
         self.sess = ttk.Combobox(top, state="readonly", width=22)
         self.proj.pack(side="left", padx=(0, 4))
         self.sess.pack(side="left", padx=(0, 4))
-        btn = tk.Button(top, text=T["refresh"], bd=0, bg=BG, fg=FG,
+        btn = tk.Button(top, text=T["refresh"], bd=0, bg=BG, fg="#000000",
                         activebackground=BG, command=self._refresh)
         btn.pack(side="left")
         self.proj.bind("<<ComboboxSelected>>", self._on_project)
