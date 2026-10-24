@@ -83,14 +83,18 @@ PAGE = """<!doctype html>
   h1 { font-size: 18px; font-weight: 600; color: #9aa0aa; letter-spacing: .5px; }
   .session { font-size: 15px; color: #c9cdd4; max-width: 640px;
              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ring-wrap { position: relative; width: 200px; height: 200px; }
+  .ring-row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+              justify-content: center; }
+  .ring-wrap { position: relative; width: 200px; height: 200px; flex-shrink: 0; }
   svg { transform: rotate(-90deg); }
   .ring-bg { stroke: #2a2e36; }
   .ring { stroke-linecap: round; transition: stroke-dashoffset .6s ease, stroke .6s; }
-  .pct { position: absolute; inset: 0; display: flex; flex-direction: column;
-         align-items: center; justify-content: center; }
-  .pct b { font-size: 40px; font-variant-numeric: tabular-nums; }
-  .pct span { font-size: 13px; color: #9aa0aa; }
+  .pct { position: absolute; inset: 0; display: flex; align-items: center;
+         justify-content: center; }
+  .pct b { font-size: 42px; font-variant-numeric: tabular-nums; }
+  .detail { text-align: left; min-width: 180px; }
+  .detail .u { font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .detail .l { font-size: 13px; color: #9aa0aa; margin-top: 6px; }
   .bar { width: min(640px, 92vw); height: 10px; background: #2a2e36;
          border-radius: 5px; overflow: hidden; }
   .bar i { display: block; height: 100%; border-radius: 5px;
@@ -130,12 +134,18 @@ PAGE = """<!doctype html>
     <option value="30000">30s</option>
   </select>
 </div>
-<div class="ring-wrap">
-  <svg width="200" height="200">
-    <circle class="ring-bg" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
-    <circle class="ring" id="ring" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
-  </svg>
-  <div class="pct"><b id="pct">–</b><span id="used"></span></div>
+<div class="ring-row">
+  <div class="ring-wrap">
+    <svg width="200" height="200">
+      <circle class="ring-bg" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
+      <circle class="ring" id="ring" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
+    </svg>
+    <div class="pct"><b id="pct">–</b></div>
+  </div>
+  <div class="detail">
+    <div class="u" id="used"></div>
+    <div class="l" id="leftline"></div>
+  </div>
 </div>
 <div class="bar"><i id="bar"></i></div>
 <div class="stats" id="stats"></div>
@@ -179,7 +189,8 @@ async function tick() {
   if (d.path && !sessSel.value) sessSel.value = d.path;
   if (d.pct == null) {
     document.getElementById("pct").textContent = "–";
-    document.getElementById("used").textContent = d.message || "";
+    document.getElementById("used").textContent = "";
+    document.getElementById("leftline").textContent = d.message || "";
     ring.style.strokeDashoffset = C;
     bar.style.width = "0";
   } else {
@@ -190,8 +201,8 @@ async function tick() {
     bar.style.background = color(d.pct);
     document.getElementById("pct").textContent = d.pct + "%";
     document.getElementById("pct").style.color = color(d.pct);
-    document.getElementById("used").textContent =
-      d.used_fmt + " / " + d.window_fmt + (d.left_fmt ? " · " + d.left_fmt + " " + labels.left : "");
+    document.getElementById("used").textContent = d.used_fmt + " / " + d.window_fmt;
+    document.getElementById("leftline").textContent = d.left_fmt ? d.left_fmt + " " + labels.left : "";
   }
   const t = d.totals || {};
   document.getElementById("stats").innerHTML =
