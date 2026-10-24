@@ -51,6 +51,24 @@ def ring_color(pct):
     return GREEN if pct < 60 else YELLOW if pct < 85 else RED
 
 
+def _lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def _hex_lerp(c1, c2, t):
+    a = tuple(int(c1[i:i+2], 16) for i in (1, 3, 5))
+    b = tuple(int(c2[i:i+2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{int(_lerp(x, y, t)):02x}" for x, y in zip(a, b))
+
+
+def color_mix(pct):
+    """Smooth gradient green→yellow→red across 0..100."""
+    pct = max(0, min(100, pct))
+    if pct < 60:
+        return _hex_lerp(GREEN, YELLOW, pct / 60)
+    return _hex_lerp(YELLOW, RED, (pct - 60) / 40)
+
+
 class FloatMeter(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -67,6 +85,8 @@ class FloatMeter(tk.Tk):
         self._drag = None
         self._session_path = None
         self._groups = {}
+        self._disp_pct = 0.0   # 动画中当前显示的百分比
+        self._anim_job = None
 
         self._build()
         self.after(200, self._refresh)
@@ -80,9 +100,15 @@ class FloatMeter(tk.Tk):
 
         self.pick_btn = tk.Button(top, text=T["pick"], command=self._open_menu, **BTN)
         self.pick_btn.pack(side="left")
-        tk.Button(top, text="⟳", fg="#000000", command=self._refresh, **{k: v for k, v in BTN.items() if k != "fg"}).pack(side="left", padx=(4, 0))
-        tk.Button(top, text="✕", fg=DIM, command=self.destroy,
-                  **{k: v for k, v in BTN.items() if k != "fg"}).pack(side="right")
+        refresh = tk.Button(top, text="⟳", fg="#000000", command=self._refresh,
+                            **{k: v for k, v in BTN.items() if k != "fg"})
+        refresh.pack(side="left", padx=(4, 0))
+        close = tk.Button(top, text="✕", fg=DIM, command=self.destroy,
+                          **{k: v for k, v in BTN.items() if k != "fg"})
+        close.pack(side="right")
+        for b, hov in ((self.pick_btn, FG), (refresh, FG), (close, FG)):
+            b.bind("<Enter>", lambda e, b=b: b.config(fg="#ffffff"))
+            b.bind("<Leave>", lambda e, b=b, c=hov if b is self.pick_btn else ("#000000" if b is refresh else DIM): b.config(fg=c))
 
         mid = tk.Frame(self, bg=BG)
         mid.pack(padx=10, pady=8)
@@ -183,11 +209,43 @@ class FloatMeter(tk.Tk):
             self.used_lbl.config(text=ccm.fmt_tokens(used))
             self.left_lbl.config(text="")
             return
-        col = ring_color(pct)
-        self.canvas.itemconfig(self.arc, extent=-360 * min(pct, 100) / 100, outline=col)
-        self.canvas.itemconfig(self.pct_txt, text=f"{pct}%", fill=col)
+        col = color_mix(pct)
+        self._animate_to(pct, col)
         self.used_lbl.config(text=f"{ccm.fmt_tokens(used)} / {ccm.fmt_tokens(window)}")
         self.left_lbl.config(text=f"{T['left']} {ccm.fmt_tokens(max(0, window - used))}")
+
+    # ------------------------------------------------------------ animation
+
+    def _animate_to(self, target_pct, _col):
+        """Ease the ring/percentage from the displayed value to the target."""
+        if self._anim_job is not None:
+            self.after_cancel(self._anim_job)
+            self._anim_job = None
+        start = self._disp_pct
+        delta = target_pct - start
+        if abs(delta) < 0.5:
+            self._render_ring(target_pct)
+            return
+        steps = 24
+        self._step = 0
+
+        def frame():
+            self._step += 1
+            t = self._step / steps
+            t = 1 - (1 - t) ** 3          # ease-out cubic
+            self._render_ring(start + delta * t)
+            if self._step < steps:
+                self._anim_job = self.after(16, frame)
+            else:
+                self._anim_job = None
+
+        frame()
+
+    def _render_ring(self, pct):
+        self._disp_pct = pct
+        col = color_mix(pct)
+        self.canvas.itemconfig(self.arc, extent=-360 * min(pct, 100) / 100, outline=col)
+        self.canvas.itemconfig(self.pct_txt, text=f"{round(pct)}%", fill=col)
 
 
 def main():
