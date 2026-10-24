@@ -168,14 +168,16 @@ class FloatMeter(tk.Tk):
 
     def _on_project(self, _=None):
         self._fill_sessions(self.proj.get())
-        self._refresh()
+        self.after_idle(self._refresh)
+        self.focus_set()  # 下拉弹出后归还焦点，避免事件卡住
 
     def _on_session(self, _=None):
         for t, p in self._groups.get(self.proj.get(), []):
             if t == self.sess.get():
                 self._session_path = p
                 break
-        self._refresh()
+        self.after_idle(self._refresh)
+        self.focus_set()
 
     def _refresh(self):
         if not getattr(self, "_groups", None):
@@ -183,7 +185,7 @@ class FloatMeter(tk.Tk):
         files = ccm.iter_rollout_files(ccm.SESSIONS_DIR)
         target = self._session_path or (files[-1] if files else None)
         if not target or not os.path.isfile(target):
-            self.pct_txt and self.canvas.itemconfig(self.pct_txt, text="–")
+            self.canvas.itemconfig(self.pct_txt, text="–")
             self.used_lbl.config(text=T["no_data"])
             return
         if self._session_path is None:
