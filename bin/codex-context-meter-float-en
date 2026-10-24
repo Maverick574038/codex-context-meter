@@ -1,0 +1,3 @@
+#!/bin/bash
+# codex-context-meter-float-en — English wrapper for the floating widget.
+exec env CCM_LANG=en "$(dirname "$0")/codex-context-meter-float" "$@"

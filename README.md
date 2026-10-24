@@ -6,8 +6,19 @@
 
 - **`bin/codex-context-meter`** — 中文版（默认）
 - **`bin/codex-context-meter-en`** — 英文版（同一逻辑，英文输出）
-- **`bin/codex-context-meter-gui`** — 常驻图形面板（中文，见下）
-- **`bin/codex-context-meter-gui-en`** — 常驻图形面板（English）
+- **`bin/codex-context-meter-gui`** — 常驻网页面板（中文，见下）
+- **`bin/codex-context-meter-gui-en`** — 常驻网页面板（English）
+- **`bin/codex-context-meter-float`** — 桌面悬浮窗（中文，见下）
+- **`bin/codex-context-meter-float-en`** — 桌面悬浮窗（English）
+
+### 4. 桌面悬浮窗（无需浏览器）
+
+```bash
+bin/codex-context-meter-float         # 中文
+bin/codex-context-meter-float-en      # English
+```
+
+无边框置顶半透明小窗：彩色圆环 + 百分比 + 用量/剩余，项目→会话两级下拉，⟳ 刷新，每 3 秒自动更新，按住拖动可移动位置。零依赖（macOS 自带 Tkinter）。
 
 ### 3. 常驻图形面板（GUI，桌面端推荐）
 

@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""codex-context-meter-float — 桌面悬浮窗用量指示器（中文版）。
+
+零依赖（macOS 自带 Tkinter）：无边框置顶悬浮窗，彩色圆环 + 百分比，
+项目/会话两级下拉，默认每 3 秒自动刷新。可拖动、可锁定位置。
+
+用法：
+  bin/codex-context-meter-float
+英文版：bin/codex-context-meter-float-en（CCM_LANG=en）
+"""
+
+import os
+import sys
+import tkinter as tk
+from tkinter import ttk
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import importlib.util
+from importlib.machinery import SourceFileLoader
+
+_core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codex-context-meter")
+_spec = importlib.util.spec_from_loader("ccm_core", SourceFileLoader("ccm_core", _core))
+ccm = importlib.util.module_from_spec(_spec)
+sys.modules["ccm_core"] = ccm
+_spec.loader.exec_module(ccm)
+
+_LANG = "en" if os.environ.get("CCM_LANG", "").lower().startswith("en") else "zh"
+
+T = {
+    "zh": {
+        "title": "Codex 用量",
+        "no_data": "暂无数据",
+        "left": "剩余",
+        "refresh": "⟳",
+    },
+    "en": {
+        "title": "Codex Meter",
+        "no_data": "no data",
+        "left": "left",
+        "refresh": "⟳",
+    },
+}[_LANG]
+
+GREEN, YELLOW, RED = "#34c759", "#ffd60a", "#ff453a"
+BG, FG, DIM = "#1c1e24ee", "#e6e6e6", "#9aa0aa"
+
+
+def ring_color(pct):
+    return GREEN if pct < 60 else YELLOW if pct < 85 else RED
+
+
+class FloatMeter(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(T["title"])
+        self.overrideredirect(True)          # 无边框
+        self.attributes("-topmost", True)    # 置顶
+        try:
+            self.attributes("-alpha", 0.92)  # 半透明
+        except tk.TclError:
+            pass
+        self.configure(bg=BG)
+        self.geometry("+60+60")              # 初始位置
+
+        self._drag = None
+        self._session_path = None
+
+        self._build()
+        self.after(200, self._refresh)
+        self._schedule()
+
+    # ------------------------------------------------------------ UI
+
+    def _build(self):
+        top = tk.Frame(self, bg=BG)
+        top.pack(fill="x", padx=6, pady=(6, 0))
+
+        self.proj = ttk.Combobox(top, state="readonly", width=14)
+        self.sess = ttk.Combobox(top, state="readonly", width=22)
+        self.proj.pack(side="left", padx=(0, 4))
+        self.sess.pack(side="left", padx=(0, 4))
+        btn = tk.Button(top, text=T["refresh"], bd=0, bg=BG, fg=FG,
+                        activebackground=BG, command=self._refresh)
+        btn.pack(side="left")
+        self.proj.bind("<<ComboboxSelected>>", self._on_project)
+        self.sess.bind("<<ComboboxSelected>>", self._on_session)
+
+        mid = tk.Frame(self, bg=BG)
+        mid.pack(padx=10, pady=8)
+
+        self.canvas = tk.Canvas(mid, width=110, height=110, bg=BG,
+                                highlightthickness=0)
+        self.canvas.pack(side="left")
+        self.canvas.create_arc(8, 8, 102, 102, start=90, extent=-360,
+                               style="arc", outline="#2a2e36", width=10)
+        self.arc = self.canvas.create_arc(8, 8, 102, 102, start=90, extent=0,
+                                          style="arc", outline=GREEN, width=10)
+        self.pct_txt = self.canvas.create_text(55, 55, text="–", fill=FG,
+                                               font=("Helvetica", 22, "bold"))
+
+        detail = tk.Frame(mid, bg=BG)
+        detail.pack(side="left", padx=(12, 0))
+        self.used_lbl = tk.Label(detail, text="", bg=BG, fg=FG,
+                                 font=("Helvetica", 13, "bold"))
+        self.used_lbl.pack(anchor="w")
+        self.left_lbl = tk.Label(detail, text="", bg=BG, fg=DIM,
+                                 font=("Helvetica", 11))
+        self.left_lbl.pack(anchor="w")
+
+        # 拖动：按住任意空白处移动
+        for w in (self, top, mid, detail, self.canvas):
+            w.bind("<ButtonPress-1>", self._drag_start)
+            w.bind("<B1-Motion>", self._drag_move)
+
+    # ------------------------------------------------------------ drag
+
+    def _drag_start(self, e):
+        self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
+
+    def _drag_move(self, e):
+        if self._drag:
+            self.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
+
+    # ------------------------------------------------------------ data
+
+    def _schedule(self):
+        self.after(3000, self._tick)
+
+    def _tick(self):
+        self._refresh()
+        self._schedule()
+
+    def _load_groups(self, keep=None):
+        names = ccm.session_names()
+        groups, order = {}, []
+        for p in reversed(ccm.iter_rollout_files(ccm.SESSIONS_DIR)):
+            title, project = ccm.session_info(p, names)
+            if not title:
+                continue
+            proj = project or "?"
+            if proj not in groups:
+                groups[proj] = []
+                order.append(proj)
+            groups[proj].append((title, p))
+        self._groups = groups
+        self._order = order
+        self.proj["values"] = order
+        cur_proj = None
+        if keep:
+            for proj in order:
+                if any(p == keep for _, p in groups[proj]):
+                    cur_proj = proj
+                    break
+        if cur_proj is None:
+            cur_proj = self.proj.get() if self.proj.get() in groups else (order[0] if order else "")
+        self.proj.set(cur_proj)
+        self._fill_sessions(cur_proj, keep)
+
+    def _fill_sessions(self, project, keep=None):
+        items = self._groups.get(project, [])
+        self.sess["values"] = [t for t, _ in items]
+        if keep and any(p == keep for _, p in items):
+            self.sess.set(next(t for t, p in items if p == keep))
+            self._session_path = keep
+        elif items:
+            self.sess.set(items[0][0])
+            self._session_path = items[0][1]
+
+    def _on_project(self, _=None):
+        self._fill_sessions(self.proj.get())
+        self._refresh()
+
+    def _on_session(self, _=None):
+        for t, p in self._groups.get(self.proj.get(), []):
+            if t == self.sess.get():
+                self._session_path = p
+                break
+        self._refresh()
+
+    def _refresh(self):
+        if not getattr(self, "_groups", None):
+            self._load_groups(self._session_path)
+        files = ccm.iter_rollout_files(ccm.SESSIONS_DIR)
+        target = self._session_path or (files[-1] if files else None)
+        if not target or not os.path.isfile(target):
+            self.pct_txt and self.canvas.itemconfig(self.pct_txt, text="–")
+            self.used_lbl.config(text=T["no_data"])
+            return
+        if self._session_path is None:
+            self._load_groups(target)
+        u = ccm.usage_from_rollout(target)
+        if not u or u.get("used") is None:
+            self.canvas.itemconfig(self.pct_txt, text="–")
+            self.used_lbl.config(text=T["no_data"])
+            self.left_lbl.config(text="")
+            return
+        used, window = u["used"], u.get("window")
+        pct = round(100 * used / window) if (used and window) else None
+        if pct is None:
+            self.canvas.itemconfig(self.pct_txt, text="–")
+            self.used_lbl.config(text=ccm.fmt_tokens(used))
+            self.left_lbl.config(text="")
+            return
+        col = ring_color(pct)
+        self.canvas.itemconfig(self.arc, extent=-360 * min(pct, 100) / 100, outline=col)
+        self.canvas.itemconfig(self.pct_txt, text=f"{pct}%", fill=col)
+        self.used_lbl.config(text=f"{ccm.fmt_tokens(used)} / {ccm.fmt_tokens(window)}")
+        self.left_lbl.config(text=f"{T['left']} {ccm.fmt_tokens(max(0, window - used))}")
+
+
+def main():
+    FloatMeter().mainloop()
+
+
+if __name__ == "__main__":
+    main()

@@ -6,8 +6,19 @@ A Codex context-usage plugin that reflects **the current conversation's context-
 
 - **`bin/codex-context-meter-en`** — English version
 - **`bin/codex-context-meter`** — Chinese version (same logic, Chinese output)
-- **`bin/codex-context-meter-gui-en`** — always-on graphical dashboard (English)
-- **`bin/codex-context-meter-gui`** — always-on graphical dashboard (中文)
+- **`bin/codex-context-meter-gui-en`** — always-on web dashboard (English)
+- **`bin/codex-context-meter-gui`** — always-on web dashboard (中文)
+- **`bin/codex-context-meter-float-en`** — floating desktop widget (English)
+- **`bin/codex-context-meter-float`** — floating desktop widget (中文)
+
+### 4. Floating desktop widget (no browser)
+
+```bash
+bin/codex-context-meter-float-en      # English
+bin/codex-context-meter-float         # 中文
+```
+
+A borderless, always-on-top, semi-transparent widget: colored ring + percentage + usage/remaining, project→session dropdowns, ⟳ refresh, auto-updates every 3s, drag anywhere to move it. Zero dependencies (Tkinter ships with macOS).
 
 ### 3. Always-on dashboard (GUI, recommended for the desktop app)
 
