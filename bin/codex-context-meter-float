@@ -42,7 +42,7 @@ T = {
 }[_LANG]
 
 GREEN, YELLOW, RED = "#34c759", "#ffd60a", "#ff453a"
-BG, FG, DIM = "#1c1e24ee", "#e6e6e6", "#9aa0aa"
+BG, FG, DIM = "#1c1e24", "#e6e6e6", "#9aa0aa"
 
 
 def ring_color(pct):
