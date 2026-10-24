@@ -271,7 +271,7 @@ function restart() {
   timer = setInterval(tick, parseInt(intSel.value, 10));
 }
 
-document.getElementById("btn").onclick = () => { loadSessions(sessSel.value); tick(); };
+document.getElementById("btn").onclick = () => location.reload();
 projSel.onchange = () => { delete sessSel.dataset.expanded; fillSess(projSel.value, null); tick(); };
 sessSel.onchange = () => {
   if (sessSel.value === "__expand__") {
