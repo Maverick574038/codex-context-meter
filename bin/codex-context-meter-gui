@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""codex-context-meter-gui — 常驻图形化用量面板（中文版）。
+
+零依赖：Python 内置 HTTP 服务 + 浏览器页面，每 3 秒自动刷新。
+数据与 CLI 版同源（~/.codex/sessions 最新 rollout 文件）。
+
+用法：
+  bin/codex-context-meter-gui [--port 8787]
+然后浏览器打开 http://localhost:8787 （启动时会尝试自动打开）
+
+英文版：bin/codex-context-meter-gui-en（CCM_LANG=en）
+"""
+
+import json
+import os
+import sys
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import importlib.util
+from importlib.machinery import SourceFileLoader
+
+_core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codex-context-meter")
+_spec = importlib.util.spec_from_loader("ccm_core", SourceFileLoader("ccm_core", _core))
+ccm = importlib.util.module_from_spec(_spec)
+sys.modules["ccm_core"] = ccm
+_spec.loader.exec_module(ccm)
+
+_LANG = "en" if os.environ.get("CCM_LANG", "").lower().startswith("en") else "zh"
+
+T = {
+    "zh": {
+        "title": "Codex 上下文用量",
+        "session": "会话",
+        "usage": "上下文占用",
+        "left": "剩余",
+        "cum": "累计消耗",
+        "input": "输入",
+        "cached": "缓存命中",
+        "output": "输出",
+        "reasoning": "推理输出",
+        "turns": "逐轮趋势（每轮累计总量）",
+        "updated": "更新于",
+        "no_data": "暂无数据 — 在 Codex 里开始对话后自动出现",
+        "window_unknown": "窗口大小未知",
+    },
+    "en": {
+        "title": "Codex Context Meter",
+        "session": "Session",
+        "usage": "Context usage",
+        "left": "left",
+        "cum": "Cumulative tokens",
+        "input": "Input",
+        "cached": "Cached input",
+        "output": "Output",
+        "reasoning": "Reasoning output",
+        "turns": "Per-turn trend (cumulative)",
+        "updated": "Updated",
+        "no_data": "No data yet — start chatting in Codex",
+        "window_unknown": "window size unknown",
+    },
+}[_LANG]
+
+PAGE = """<!doctype html>
+<html lang="__LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+         background: #16181d; color: #e6e6e6; min-height: 100vh;
+         display: flex; flex-direction: column; align-items: center;
+         padding: 28px 16px; gap: 20px; }
+  h1 { font-size: 18px; font-weight: 600; color: #9aa0aa; letter-spacing: .5px; }
+  .session { font-size: 15px; color: #c9cdd4; max-width: 640px;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ring-wrap { position: relative; width: 200px; height: 200px; }
+  svg { transform: rotate(-90deg); }
+  .ring-bg { stroke: #2a2e36; }
+  .ring { stroke-linecap: round; transition: stroke-dashoffset .6s ease, stroke .6s; }
+  .pct { position: absolute; inset: 0; display: flex; flex-direction: column;
+         align-items: center; justify-content: center; }
+  .pct b { font-size: 40px; font-variant-numeric: tabular-nums; }
+  .pct span { font-size: 13px; color: #9aa0aa; }
+  .bar { width: min(640px, 92vw); height: 10px; background: #2a2e36;
+         border-radius: 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 5px;
+           transition: width .6s ease, background .6s; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+           gap: 10px; width: min(640px, 92vw); }
+  .card { background: #1e2128; border: 1px solid #2a2e36; border-radius: 10px;
+          padding: 12px 14px; }
+  .card .k { font-size: 12px; color: #9aa0aa; }
+  .card .v { font-size: 20px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .trend { width: min(640px, 92vw); background: #1e2128; border: 1px solid #2a2e36;
+           border-radius: 10px; padding: 14px; }
+  .trend h2 { font-size: 13px; color: #9aa0aa; font-weight: 500; margin-bottom: 10px; }
+  .bars { display: flex; align-items: flex-end; gap: 4px; height: 90px; }
+  .bars i { flex: 1; background: #3d7bfd; border-radius: 3px 3px 0 0; min-height: 2px;
+            opacity: .85; transition: height .4s; }
+  .meta { font-size: 12px; color: #6b7078; }
+</style>
+</head>
+<body>
+<h1>__TITLE__</h1>
+<div class="session" id="session"></div>
+<div class="ring-wrap">
+  <svg width="200" height="200">
+    <circle class="ring-bg" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
+    <circle class="ring" id="ring" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
+  </svg>
+  <div class="pct"><b id="pct">–</b><span id="used"></span></div>
+</div>
+<div class="bar"><i id="bar"></i></div>
+<div class="stats" id="stats"></div>
+<div class="trend"><h2>__TURNS__</h2><div class="bars" id="bars"></div></div>
+<div class="meta" id="meta"></div>
+<script>
+const C = 2 * Math.PI * 86;
+const labels = __LABELS__;
+function color(p) { return p < 60 ? "#34c759" : p < 85 ? "#ffd60a" : "#ff453a"; }
+async function tick() {
+  let d;
+  try { d = await (await fetch("/api/usage")).json(); } catch (e) { return; }
+  const ring = document.getElementById("ring");
+  const bar = document.getElementById("bar");
+  document.getElementById("session").textContent = d.session || "";
+  if (d.pct == null) {
+    document.getElementById("pct").textContent = "–";
+    document.getElementById("used").textContent = d.message || "";
+    ring.style.strokeDashoffset = C;
+    bar.style.width = "0";
+  } else {
+    ring.style.strokeDasharray = C;
+    ring.style.strokeDashoffset = C * (1 - Math.min(d.pct, 100) / 100);
+    ring.style.stroke = color(d.pct);
+    bar.style.width = Math.min(d.pct, 100) + "%";
+    bar.style.background = color(d.pct);
+    document.getElementById("pct").textContent = d.pct + "%";
+    document.getElementById("pct").style.color = color(d.pct);
+    document.getElementById("used").textContent =
+      d.used_fmt + " / " + d.window_fmt + (d.left_fmt ? " · " + d.left_fmt + " " + labels.left : "");
+  }
+  const t = d.totals || {};
+  document.getElementById("stats").innerHTML =
+    [["input", t.input_tokens], ["cached", t.cached_input_tokens],
+     ["output", t.output_tokens], ["reasoning", t.reasoning_output_tokens]]
+      .filter(x => typeof x[1] === "number")
+      .map(x => `<div class="card"><div class="k">${labels[x[0]]}</div><div class="v">${x[1].toLocaleString()}</div></div>`)
+      .join("");
+  const turns = (d.per_turn || []).slice(-30);
+  const max = Math.max(...turns, 1);
+  document.getElementById("bars").innerHTML =
+    turns.map(v => `<i style="height:${Math.max(2, v / max * 100)}%" title="${v.toLocaleString()}"></i>`).join("");
+  document.getElementById("meta").textContent = labels.updated + " " + new Date().toLocaleTimeString();
+}
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
+"""
+
+
+def render_page():
+    labels = {k: T[k] for k in ("left", "input", "cached", "output", "reasoning", "updated")}
+    return (PAGE.replace("__LANG__", _LANG)
+                .replace("__TITLE__", T["title"])
+                .replace("__TURNS__", T["turns"])
+                .replace("__LABELS__", json.dumps(labels, ensure_ascii=False)))
+
+
+def usage_payload():
+    files = ccm.iter_rollout_files(ccm.SESSIONS_DIR)
+    if not files:
+        return {"pct": None, "message": T["no_data"]}
+    u = ccm.usage_from_rollout(files[-1])
+    if not u or u.get("used") is None:
+        return {"pct": None, "message": T["no_data"]}
+    used, window = u["used"], u.get("window")
+    pct = round(100 * used / window) if (used and window) else None
+    return {
+        "session": ccm.name_for(files[-1], ccm.session_names()),
+        "pct": pct,
+        "used_fmt": ccm.fmt_tokens(used),
+        "window_fmt": ccm.fmt_tokens(window) if window else T["window_unknown"],
+        "left_fmt": ccm.fmt_tokens(max(0, window - used)) if (window and pct is not None) else None,
+        "totals": u.get("totals") or {},
+        "per_turn": [t.get("total_tokens") for t in (u.get("per_turn") or [])
+                     if isinstance(t.get("total_tokens"), int)],
+        "message": T["no_data"] if pct is None else None,
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/api/usage"):
+            body = json.dumps(usage_payload(), ensure_ascii=False).encode()
+            ctype = "application/json; charset=utf-8"
+        else:
+            body = render_page().encode()
+            ctype = "text/html; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+def main():
+    port = 8787
+    if "--port" in sys.argv:
+        i = sys.argv.index("--port")
+        if i + 1 < len(sys.argv):
+            port = int(sys.argv[i + 1])
+    url = f"http://localhost:{port}"
+    print(f"{T['title']} → {url}  (Ctrl+C 退出 / to quit)")
+    threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    try:
+        ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

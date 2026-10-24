@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# codex-context-meter-gui-en — English wrapper for the GUI dashboard.
+exec env CCM_LANG=en "$(dirname "$0")/codex-context-meter-gui" "$@"

@@ -6,6 +6,17 @@ A Codex context-usage plugin that reflects **the current conversation's context-
 
 - **`bin/codex-context-meter-en`** — English version
 - **`bin/codex-context-meter`** — Chinese version (same logic, Chinese output)
+- **`bin/codex-context-meter-gui-en`** — always-on graphical dashboard (English)
+- **`bin/codex-context-meter-gui`** — always-on graphical dashboard (中文)
+
+### 3. Always-on dashboard (GUI, recommended for the desktop app)
+
+```bash
+bin/codex-context-meter-gui-en        # English, opens your browser
+bin/codex-context-meter-gui           # 中文
+```
+
+Serves a local page at `http://localhost:8787`: colored ring (green/yellow/red) + percentage + progress bar + per-category stats + per-turn trend chart, **auto-refreshing every 3 seconds**. Keep the browser tab around; `--port` changes the port, Ctrl+C quits. Zero third-party dependencies (Python's built-in HTTP server).
 
 ## Features
 

@@ -6,6 +6,17 @@
 
 - **`bin/codex-context-meter`** — 中文版（默认）
 - **`bin/codex-context-meter-en`** — 英文版（同一逻辑，英文输出）
+- **`bin/codex-context-meter-gui`** — 常驻图形面板（中文，见下）
+- **`bin/codex-context-meter-gui-en`** — 常驻图形面板（English）
+
+### 3. 常驻图形面板（GUI，桌面端推荐）
+
+```bash
+bin/codex-context-meter-gui           # 中文，自动打开浏览器
+bin/codex-context-meter-gui-en        # English
+```
+
+启动本地页面 `http://localhost:8787`：彩色大圆环（绿/黄/红）+ 百分比 + 进度条 + 分类统计 + 逐轮趋势图，**每 3 秒自动刷新**。浏览器标签常驻即可；`--port` 可换端口，Ctrl+C 退出。零第三方依赖（Python 内置 HTTP 服务）。
 
 ## 功能
 
