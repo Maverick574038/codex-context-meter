@@ -45,6 +45,8 @@ T = {
         "updated": "更新于",
         "no_data": "暂无数据 — 在 Codex 里开始对话后自动出现",
         "window_unknown": "窗口大小未知",
+        "refresh": "刷新",
+        "latest": "最新会话",
     },
     "en": {
         "title": "Codex Context Meter",
@@ -60,6 +62,8 @@ T = {
         "updated": "Updated",
         "no_data": "No data yet — start chatting in Codex",
         "window_unknown": "window size unknown",
+        "refresh": "Refresh",
+        "latest": "Latest session",
     },
 }[_LANG]
 
@@ -104,11 +108,28 @@ PAGE = """<!doctype html>
   .bars i { flex: 1; background: #3d7bfd; border-radius: 3px 3px 0 0; min-height: 2px;
             opacity: .85; transition: height .4s; }
   .meta { font-size: 12px; color: #6b7078; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+              justify-content: center; width: min(640px, 92vw); }
+  select, button { background: #1e2128; color: #e6e6e6; border: 1px solid #2a2e36;
+                   border-radius: 8px; padding: 7px 12px; font-size: 13px;
+                   font-family: inherit; }
+  select#sess { max-width: min(420px, 60vw); }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: #3d7bfd; }
 </style>
 </head>
 <body>
 <h1>__TITLE__</h1>
-<div class="session" id="session"></div>
+<div class="controls">
+  <select id="sess"></select>
+  <button id="btn" title="__REFRESH__">⟳</button>
+  <select id="interval">
+    <option value="3000">3s</option>
+    <option value="5000">5s</option>
+    <option value="10000">10s</option>
+    <option value="30000">30s</option>
+  </select>
+</div>
 <div class="ring-wrap">
   <svg width="200" height="200">
     <circle class="ring-bg" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
@@ -123,13 +144,39 @@ PAGE = """<!doctype html>
 <script>
 const C = 2 * Math.PI * 86;
 const labels = __LABELS__;
+let timer = null;
+const sessSel = document.getElementById("sess");
+const intSel = document.getElementById("interval");
+
 function color(p) { return p < 60 ? "#34c759" : p < 85 ? "#ffd60a" : "#ff453a"; }
+
+async function loadSessions() {
+  try {
+    const list = await (await fetch("/api/sessions")).json();
+    const cur = sessSel.value;
+    sessSel.innerHTML = "";
+    for (const s of list) {
+      const o = document.createElement("option");
+      o.value = s.path;
+      o.textContent = s.name;
+      sessSel.appendChild(o);
+    }
+    if (cur && list.some(s => s.path === cur)) sessSel.value = cur;
+  } catch (e) {}
+}
+
 async function tick() {
   let d;
-  try { d = await (await fetch("/api/usage")).json(); } catch (e) { return; }
+  try {
+    const q = sessSel.value ? "?path=" + encodeURIComponent(sessSel.value) : "";
+    d = await (await fetch("/api/usage" + q)).json();
+  } catch (e) { return; }
   const ring = document.getElementById("ring");
   const bar = document.getElementById("bar");
-  document.getElementById("session").textContent = d.session || "";
+  if (d.path && sessSel.value !== d.path && ![...sessSel.options].some(o => o.value === d.path)) {
+    await loadSessions();
+  }
+  if (d.path && !sessSel.value) sessSel.value = d.path;
   if (d.pct == null) {
     document.getElementById("pct").textContent = "–";
     document.getElementById("used").textContent = d.message || "";
@@ -159,8 +206,17 @@ async function tick() {
     turns.map(v => `<i style="height:${Math.max(2, v / max * 100)}%" title="${v.toLocaleString()}"></i>`).join("");
   document.getElementById("meta").textContent = labels.updated + " " + new Date().toLocaleTimeString();
 }
-tick();
-setInterval(tick, 3000);
+
+function restart() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(tick, parseInt(intSel.value, 10));
+}
+
+document.getElementById("btn").onclick = () => { loadSessions(); tick(); };
+sessSel.onchange = tick;
+intSel.onchange = () => { restart(); tick(); };
+loadSessions().then(tick);
+restart();
 </script>
 </body>
 </html>
@@ -172,20 +228,32 @@ def render_page():
     return (PAGE.replace("__LANG__", _LANG)
                 .replace("__TITLE__", T["title"])
                 .replace("__TURNS__", T["turns"])
+                .replace("__REFRESH__", T["refresh"])
                 .replace("__LABELS__", json.dumps(labels, ensure_ascii=False)))
 
 
-def usage_payload():
+def sessions_payload():
+    """All known rollout files, newest first, with display names."""
+    names = ccm.session_names()
+    out = []
+    for p in reversed(ccm.iter_rollout_files(ccm.SESSIONS_DIR)):
+        out.append({"path": p, "name": ccm.name_for(p, names)})
+    return out
+
+
+def usage_payload(path=None):
     files = ccm.iter_rollout_files(ccm.SESSIONS_DIR)
     if not files:
         return {"pct": None, "message": T["no_data"]}
-    u = ccm.usage_from_rollout(files[-1])
+    target = path if (path and os.path.isfile(path) and path.endswith(".jsonl")) else files[-1]
+    u = ccm.usage_from_rollout(target)
     if not u or u.get("used") is None:
-        return {"pct": None, "message": T["no_data"]}
+        return {"pct": None, "message": T["no_data"], "path": target}
     used, window = u["used"], u.get("window")
     pct = round(100 * used / window) if (used and window) else None
     return {
-        "session": ccm.name_for(files[-1], ccm.session_names()),
+        "session": ccm.name_for(target, ccm.session_names()),
+        "path": target,
         "pct": pct,
         "used_fmt": ccm.fmt_tokens(used),
         "window_fmt": ccm.fmt_tokens(window) if window else T["window_unknown"],
@@ -199,8 +267,14 @@ def usage_payload():
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/api/usage"):
-            body = json.dumps(usage_payload(), ensure_ascii=False).encode()
+        from urllib.parse import urlparse, parse_qs
+        url = urlparse(self.path)
+        if url.path == "/api/sessions":
+            body = json.dumps(sessions_payload(), ensure_ascii=False).encode()
+            ctype = "application/json; charset=utf-8"
+        elif url.path == "/api/usage":
+            path = (parse_qs(url.query).get("path") or [None])[0]
+            body = json.dumps(usage_payload(path), ensure_ascii=False).encode()
             ctype = "application/json; charset=utf-8"
         else:
             body = render_page().encode()
