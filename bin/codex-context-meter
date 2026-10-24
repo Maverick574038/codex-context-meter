@@ -35,7 +35,7 @@ S = {
         "no_data": "⚪ 暂无 token 数据",
         "no_sessions": "未找到会话记录：{dir}",
         "session_empty": "最近的会话还没有 token 数据。",
-        "session_file": "会话文件：{path}",
+        "session_file": "会话：{name}",
         "ctx": "上下文占用：{used} / {window}（已用 {pct}%，剩余 {left}）",
         "ctx_no_window": "上下文占用：{used}（上下文窗口大小未知）",
         "cum_header": "累计消耗 token（各轮累加；每轮的输入都会重新计入完整上下文）：",
@@ -51,7 +51,7 @@ S = {
         "no_data": "⚪ no token data yet",
         "no_sessions": "No rollout files found in {dir}",
         "session_empty": "Latest session has no token data yet.",
-        "session_file": "Session file: {path}",
+        "session_file": "Session: {name}",
         "ctx": "Context usage : {used} / {window} ({pct}% used, {left} left)",
         "ctx_no_window": "Context usage : {used} (context window size unknown)",
         "cum_header": "Cumulative tokens (sum over all turns; input re-counts the context sent each turn):",
@@ -150,6 +150,50 @@ def iter_rollout_files(sessions_dir):
         return []
 
 
+def session_names(codex_dir=CODEX_DIR):
+    """Map session id -> thread name from ~/.codex/session_index.jsonl."""
+    names = {}
+    try:
+        with open(os.path.join(codex_dir, "session_index.jsonl"),
+                  "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                sid, name = rec.get("id"), rec.get("thread_name")
+                if sid and name:
+                    names[sid] = name
+    except Exception:
+        pass
+    return names
+
+
+def name_for(path, names):
+    """Best-effort session display name: thread_name, else cwd, else file stem."""
+    stem = os.path.basename(path)
+    for sid, name in names.items():
+        if sid in stem:
+            return name
+    # Fallback: session_meta cwd from the file itself.
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"session_meta"' not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                cwd = (rec.get("payload") or {}).get("cwd")
+                if cwd:
+                    return os.path.basename(cwd.rstrip("/")) or cwd
+                break
+    except Exception:
+        pass
+    return stem
+
+
 def usage_from_rollout(path):
     """Scan a rollout JSONL file; return latest token stats found."""
     used = window = None
@@ -246,7 +290,7 @@ def report(sessions_dir=SESSIONS_DIR):
     used, window = u["used"], u.get("window")
     t = u["totals"]
     pct = round(100 * used / window) if (used and window) else None
-    print(S["session_file"].format(path=files[-1]))
+    print(S["session_file"].format(name=name_for(files[-1], session_names())))
     if window and pct is not None:
         print(S["ctx"].format(used=fmt_tokens(used), window=fmt_tokens(window),
                               pct=pct, left=fmt_tokens(max(0, window - used))))
