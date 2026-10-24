@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""codex-context-meter — a Codex CLI statusline plugin.
+
+Shows the current conversation's context-window usage and token consumption
+as a colored dot + percentage in the Codex TUI status line, and can print a
+detailed token report with `codex-context-meter report`.
+
+Data sources (first hit wins):
+  1. Session JSON piped to stdin by Codex's `tui.status_line` hook.
+  2. Latest rollout file under ~/.codex/sessions/**/*.jsonl
+     (token_count / turn_context events).
+
+The script never raises: any error results in empty (statusline) or a short
+message (report), so it can't break the Codex UI.
+"""
+
+import json
+import os
+import sys
+
+DEFAULT_CONTEXT_WINDOW = 200_000
+CODEX_DIR = os.path.expanduser(os.environ.get("CODEX_HOME", "~/.codex"))
+SESSIONS_DIR = os.path.join(CODEX_DIR, "sessions")
+
+GREEN, YELLOW, RED, RESET = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
+
+
+def fmt_tokens(n):
+    if n is None:
+        return "?"
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "?"
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
+
+
+def dot_for(pct):
+    if pct is None:
+        return "⚪"
+    color = GREEN if pct < 60 else YELLOW if pct < 85 else RED
+    return f"{color}●{RESET}"
+
+
+# ---------------------------------------------------------------- parsing
+
+def usage_from_stdin(data):
+    """Extract token usage from the JSON Codex pipes to a status_line command.
+
+    Field names are matched loosely because the schema has shifted across
+    Codex versions.
+    """
+    try:
+        obj = json.loads(data)
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+
+    def dig(d, *path):
+        for key in path:
+            if not isinstance(d, dict):
+                return None
+            d = d.get(key)
+        return d
+
+    window = (
+        dig(obj, "context_window")
+        or dig(obj, "model_context_window")
+        or dig(obj, "model", "context_window")
+    )
+    used = (
+        dig(obj, "tokens_in_context")
+        or dig(obj, "context_tokens")
+        or dig(obj, "token_usage", "total_tokens")
+        or dig(obj, "usage", "total_tokens")
+        or dig(obj, "total_token_usage", "tokens_in_context_window")
+    )
+    totals = dig(obj, "total_token_usage") or dig(obj, "usage") or {}
+    if used is None and isinstance(totals, dict):
+        for k in ("total_tokens", "input_tokens"):
+            if isinstance(totals.get(k), int):
+                used = totals[k]
+                break
+    if used is None:
+        return None
+    return {
+        "used": used,
+        "window": window or DEFAULT_CONTEXT_WINDOW,
+        "totals": totals if isinstance(totals, dict) else {},
+    }
+
+
+def iter_rollout_files(sessions_dir):
+    try:
+        entries = []
+        for root, _dirs, files in os.walk(sessions_dir):
+            for f in files:
+                if f.endswith(".jsonl"):
+                    p = os.path.join(root, f)
+                    entries.append((os.path.getmtime(p), p))
+        entries.sort()
+        return [p for _, p in entries]
+    except Exception:
+        return []
+
+
+def usage_from_rollout(path):
+    """Scan a rollout JSONL file; return latest token stats found."""
+    used = window = None
+    totals = {}
+    per_turn = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                payload = rec.get("payload", rec)
+                if not isinstance(payload, dict):
+                    continue
+                ptype = payload.get("type", "")
+                info = payload.get("info") or {}
+                if ptype in ("token_count", "turn_context") or "total_token_usage" in str(payload)[:0]:
+                    tu = info.get("total_token_usage") or payload.get("total_token_usage") or {}
+                    if isinstance(tu, dict) and tu:
+                        totals = tu
+                        per_turn.append(tu)
+                    cw = info.get("model_context_window") or payload.get("model_context_window")
+                    if cw:
+                        window = cw
+                    last = info.get("last_token_usage") or payload.get("last_token_usage") or {}
+                    ctx = info.get("tokens_in_context_window")
+                    if isinstance(ctx, int):
+                        used = ctx
+                    elif isinstance(tu, dict):
+                        t = tu.get("total_tokens")
+                        if isinstance(t, int):
+                            used = t
+    except Exception:
+        return None
+    if used is None and not totals:
+        return None
+    if used is None:
+        used = totals.get("total_tokens")
+    return {
+        "used": used,
+        "window": window or DEFAULT_CONTEXT_WINDOW,
+        "totals": totals,
+        "per_turn": per_turn,
+    }
+
+
+def get_usage():
+    """Try stdin first (statusline invocation), then latest rollout file."""
+    if not sys.stdin.isatty():
+        try:
+            data = sys.stdin.read()
+        except Exception:
+            data = ""
+        if data.strip():
+            u = usage_from_stdin(data)
+            if u:
+                return u
+    files = iter_rollout_files(SESSIONS_DIR)
+    if files:
+        return usage_from_rollout(files[-1])
+    return None
+
+
+# ------------------------------------------------------------------ output
+
+def statusline():
+    try:
+        u = get_usage()
+        if not u or u.get("used") is None:
+            print("⚪ no token data yet")
+            return
+        used, window = u["used"], u.get("window") or DEFAULT_CONTEXT_WINDOW
+        pct = round(100 * used / window) if window else None
+        print(f"{dot_for(pct)} {pct}% · {fmt_tokens(used)}/{fmt_tokens(window)} tokens")
+    except Exception:
+        print("")
+
+
+def report(sessions_dir=SESSIONS_DIR):
+    files = iter_rollout_files(sessions_dir)
+    if not files:
+        print(f"No rollout files found in {sessions_dir}")
+        return
+    u = usage_from_rollout(files[-1])
+    if not u:
+        print("Latest session has no token data yet.")
+        return
+    used, window = u["used"], u["window"]
+    t = u["totals"]
+    pct = round(100 * used / window) if (used and window) else None
+    print(f"Session file: {files[-1]}")
+    print(f"Context usage : {fmt_tokens(used)} / {fmt_tokens(window)}"
+          + (f" ({pct}% used, {fmt_tokens(window - used)} left)" if pct is not None else ""))
+    print("Cumulative tokens:")
+    for label, key in [("  input", "input_tokens"), ("  cached input", "cached_input_tokens"),
+                       ("  output", "output_tokens"), ("  reasoning output", "reasoning_output_tokens"),
+                       ("  total", "total_tokens")]:
+        v = t.get(key)
+        if isinstance(v, int):
+            print(f"{label:20s} {v:,}")
+    per_turn = u.get("per_turn") or []
+    if per_turn:
+        print(f"\nTurns recorded: {len(per_turn)} (total tokens per turn):")
+        for i, tu in enumerate(per_turn[-20:], start=max(1, len(per_turn) - 19)):
+            tt = tu.get("total_tokens", "?")
+            print(f"  turn {i:>3}: {tt:,}" if isinstance(tt, int) else f"  turn {i:>3}: ?")
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    flags = {a for a in sys.argv[1:] if a.startswith("-")}
+    sessions_dir = SESSIONS_DIR
+    for i, a in enumerate(sys.argv):
+        if a == "--sessions-dir" and i + 1 < len(sys.argv):
+            sessions_dir = sys.argv[i + 1]
+    if args and args[0] == "report":
+        report(sessions_dir)
+    else:
+        statusline()
+
+
+if __name__ == "__main__":
+    main()
