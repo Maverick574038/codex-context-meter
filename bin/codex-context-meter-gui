@@ -125,6 +125,7 @@ PAGE = """<!doctype html>
 <body>
 <h1>__TITLE__</h1>
 <div class="controls">
+  <select id="proj"></select>
   <select id="sess"></select>
   <button id="btn" title="__REFRESH__">⟳</button>
   <select id="interval">
@@ -155,24 +156,47 @@ PAGE = """<!doctype html>
 const C = 2 * Math.PI * 86;
 const labels = __LABELS__;
 let timer = null;
+let groups = [];
+const projSel = document.getElementById("proj");
 const sessSel = document.getElementById("sess");
 const intSel = document.getElementById("interval");
 
 function color(p) { return p < 60 ? "#34c759" : p < 85 ? "#ffd60a" : "#ff453a"; }
 
-async function loadSessions() {
+function fillSess(project, keepPath) {
+  const g = groups.find(g => g.project === project);
+  sessSel.innerHTML = "";
+  if (!g) return;
+  for (const s of g.sessions) {
+    const o = document.createElement("option");
+    o.value = s.path;
+    o.textContent = s.name;
+    sessSel.appendChild(o);
+  }
+  if (keepPath && g.sessions.some(s => s.path === keepPath)) sessSel.value = keepPath;
+}
+
+async function loadSessions(keepPath) {
   try {
-    const list = await (await fetch("/api/sessions")).json();
-    const cur = sessSel.value;
-    sessSel.innerHTML = "";
-    for (const s of list) {
-      const o = document.createElement("option");
-      o.value = s.path;
-      o.textContent = s.name;
-      sessSel.appendChild(o);
-    }
-    if (cur && list.some(s => s.path === cur)) sessSel.value = cur;
-  } catch (e) {}
+    groups = await (await fetch("/api/sessions")).json();
+  } catch (e) { return; }
+  const prevProj = projSel.value;
+  projSel.innerHTML = "";
+  for (const g of groups) {
+    const o = document.createElement("option");
+    o.value = g.project;
+    o.textContent = g.project + " (" + g.sessions.length + ")";
+    projSel.appendChild(o);
+  }
+  let proj = groups.length ? groups[0].project : "";
+  if (keepPath) {
+    const g = groups.find(g => g.sessions.some(s => s.path === keepPath));
+    if (g) proj = g.project;
+  } else if (prevProj && groups.some(g => g.project === prevProj)) {
+    proj = prevProj;
+  }
+  projSel.value = proj;
+  fillSess(proj, keepPath);
 }
 
 async function tick() {
@@ -183,8 +207,9 @@ async function tick() {
   } catch (e) { return; }
   const ring = document.getElementById("ring");
   const bar = document.getElementById("bar");
-  if (d.path && sessSel.value !== d.path && ![...sessSel.options].some(o => o.value === d.path)) {
-    await loadSessions();
+  if (d.path && d.path !== sessSel.value &&
+      ![...sessSel.options].some(o => o.value === d.path)) {
+    await loadSessions(d.path);
   }
   if (d.path && !sessSel.value) sessSel.value = d.path;
   if (d.pct == null) {
@@ -223,10 +248,11 @@ function restart() {
   timer = setInterval(tick, parseInt(intSel.value, 10));
 }
 
-document.getElementById("btn").onclick = () => { loadSessions(); tick(); };
+document.getElementById("btn").onclick = () => { loadSessions(sessSel.value); tick(); };
+projSel.onchange = () => { fillSess(projSel.value, null); tick(); };
 sessSel.onchange = tick;
 intSel.onchange = () => { restart(); tick(); };
-loadSessions().then(tick);
+loadSessions(null).then(tick);
 restart();
 </script>
 </body>
@@ -244,12 +270,25 @@ def render_page():
 
 
 def sessions_payload():
-    """All known rollout files, newest first, with display names."""
+    """Rollout files grouped by project (cwd), newest project first.
+
+    Title is only a real conversation title (index thread_name or first user
+    message); sessions without one are omitted from the picker — the CLI
+    report can still name them via project/cwd fallback.
+    """
     names = ccm.session_names()
-    out = []
+    groups = {}
+    order = []
     for p in reversed(ccm.iter_rollout_files(ccm.SESSIONS_DIR)):
-        out.append({"path": p, "name": ccm.name_for(p, names)})
-    return out
+        title, project = ccm.session_info(p, names)
+        if not title:
+            continue
+        proj = project or "?"
+        if proj not in groups:
+            groups[proj] = []
+            order.append(proj)
+        groups[proj].append({"path": p, "name": title})
+    return [{"project": proj, "sessions": groups[proj]} for proj in order]
 
 
 def usage_payload(path=None):

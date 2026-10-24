@@ -169,16 +169,15 @@ def session_names(codex_dir=CODEX_DIR):
     return names
 
 
-def name_for(path, names):
-    """Best-effort session display name.
+def session_info(path, names):
+    """Return (title, project, session_id) for a rollout file.
 
-    Priority: thread_name from session_index.jsonl, first user message in
-    the rollout file, cwd basename, then the file stem.
+    title: thread_name from session_index.jsonl, else the first user message,
+           else None (never a directory name — callers group by project).
+    project: cwd basename from session_meta.
     """
     stem = os.path.basename(path)
-    for sid, name in names.items():
-        if sid in stem:
-            return name
+    title = next((n for sid, n in names.items() if sid in stem), None)
     cwd = first_msg = None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -188,7 +187,7 @@ def name_for(path, names):
                         cwd = (json.loads(line).get("payload") or {}).get("cwd")
                     except Exception:
                         pass
-                if first_msg is None and '"user_message"' in line:
+                if title is None and first_msg is None and '"user_message"' in line:
                     try:
                         msg = (json.loads(line).get("payload") or {}).get("message", "")
                         msg = " ".join(str(msg).split())
@@ -196,15 +195,18 @@ def name_for(path, names):
                             first_msg = msg[:40] + ("…" if len(msg) > 40 else "")
                     except Exception:
                         pass
-                if cwd and first_msg:
+                if cwd and (title or first_msg):
                     break
     except Exception:
         pass
-    if first_msg:
-        return first_msg
-    if cwd:
-        return os.path.basename(cwd.rstrip("/")) or cwd
-    return stem
+    project = (os.path.basename(cwd.rstrip("/")) or cwd) if cwd else ""
+    return title or first_msg, project
+
+
+def name_for(path, names):
+    """Display name for the CLI report: title, else project, else file stem."""
+    title, project = session_info(path, names)
+    return title or project or os.path.basename(path)
 
 
 def usage_from_rollout(path):
