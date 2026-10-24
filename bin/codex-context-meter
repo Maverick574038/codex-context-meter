@@ -170,27 +170,40 @@ def session_names(codex_dir=CODEX_DIR):
 
 
 def name_for(path, names):
-    """Best-effort session display name: thread_name, else cwd, else file stem."""
+    """Best-effort session display name.
+
+    Priority: thread_name from session_index.jsonl, first user message in
+    the rollout file, cwd basename, then the file stem.
+    """
     stem = os.path.basename(path)
     for sid, name in names.items():
         if sid in stem:
             return name
-    # Fallback: session_meta cwd from the file itself.
+    cwd = first_msg = None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
-                if '"session_meta"' not in line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                cwd = (rec.get("payload") or {}).get("cwd")
-                if cwd:
-                    return os.path.basename(cwd.rstrip("/")) or cwd
-                break
+                if cwd is None and '"session_meta"' in line:
+                    try:
+                        cwd = (json.loads(line).get("payload") or {}).get("cwd")
+                    except Exception:
+                        pass
+                if first_msg is None and '"user_message"' in line:
+                    try:
+                        msg = (json.loads(line).get("payload") or {}).get("message", "")
+                        msg = " ".join(str(msg).split())
+                        if msg:
+                            first_msg = msg[:40] + ("…" if len(msg) > 40 else "")
+                    except Exception:
+                        pass
+                if cwd and first_msg:
+                    break
     except Exception:
         pass
+    if first_msg:
+        return first_msg
+    if cwd:
+        return os.path.basename(cwd.rstrip("/")) or cwd
     return stem
 
 
