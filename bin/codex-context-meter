@@ -175,16 +175,22 @@ def session_info(path, names):
     title: thread_name from session_index.jsonl, else the first user message,
            else None (never a directory name — callers group by project).
     project: cwd basename from session_meta.
+    Sessions whose thread_source marks them as background agent runs (e.g.
+    guardian_review) get title None so callers can filter them out.
     """
     stem = os.path.basename(path)
     title = next((n for sid, n in names.items() if sid in stem), None)
     cwd = first_msg = None
+    background = False
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 if cwd is None and '"session_meta"' in line:
                     try:
-                        cwd = (json.loads(line).get("payload") or {}).get("cwd")
+                        p = json.loads(line).get("payload") or {}
+                        cwd = p.get("cwd")
+                        if p.get("thread_source") not in (None, "user"):
+                            background = True
                     except Exception:
                         pass
                 if title is None and first_msg is None and '"user_message"' in line:
@@ -199,6 +205,8 @@ def session_info(path, names):
                     break
     except Exception:
         pass
+    if background:
+        return None, None
     project = (os.path.basename(cwd.rstrip("/")) or cwd) if cwd else ""
     return title or first_msg, project
 

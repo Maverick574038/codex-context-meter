@@ -47,6 +47,8 @@ T = {
         "window_unknown": "窗口大小未知",
         "refresh": "刷新",
         "latest": "最新会话",
+        "expand": "▾ 展开全部（还有 {n} 条）",
+        "collapse": "▴ 收起（共 {n} 条）",
     },
     "en": {
         "title": "Codex Context Meter",
@@ -64,6 +66,8 @@ T = {
         "window_unknown": "window size unknown",
         "refresh": "Refresh",
         "latest": "Latest session",
+        "expand": "▾ Show all ({n} more)",
+        "collapse": "▴ Collapse ({n} total)",
     },
 }[_LANG]
 
@@ -167,13 +171,32 @@ function fillSess(project, keepPath) {
   const g = groups.find(g => g.project === project);
   sessSel.innerHTML = "";
   if (!g) return;
-  for (const s of g.sessions) {
+  const expanded = sessSel.dataset.expanded === project;
+  const list = g.sessions;
+  const shown = expanded ? list : list.slice(0, 5);
+  for (const s of shown) {
     const o = document.createElement("option");
     o.value = s.path;
     o.textContent = s.name;
     sessSel.appendChild(o);
   }
-  if (keepPath && g.sessions.some(s => s.path === keepPath)) sessSel.value = keepPath;
+  if (list.length > 5) {
+    const o = document.createElement("option");
+    o.value = "__expand__";
+    o.textContent = expanded
+      ? labels.collapse.replace("{n}", list.length)
+      : labels.expand.replace("{n}", list.length - 5);
+    sessSel.appendChild(o);
+  }
+  if (keepPath && list.some(s => s.path === keepPath)) {
+    // Ensure the kept selection is visible: expand if it's beyond the first 5.
+    if (!expanded && !shown.some(s => s.path === keepPath)) {
+      sessSel.dataset.expanded = project;
+      fillSess(project, keepPath);
+      return;
+    }
+    sessSel.value = keepPath;
+  }
 }
 
 async function loadSessions(keepPath) {
@@ -249,8 +272,16 @@ function restart() {
 }
 
 document.getElementById("btn").onclick = () => { loadSessions(sessSel.value); tick(); };
-projSel.onchange = () => { fillSess(projSel.value, null); tick(); };
-sessSel.onchange = tick;
+projSel.onchange = () => { delete sessSel.dataset.expanded; fillSess(projSel.value, null); tick(); };
+sessSel.onchange = () => {
+  if (sessSel.value === "__expand__") {
+    const expanded = sessSel.dataset.expanded === projSel.value;
+    if (expanded) delete sessSel.dataset.expanded; else sessSel.dataset.expanded = projSel.value;
+    fillSess(projSel.value, null);
+    return;
+  }
+  tick();
+};
 intSel.onchange = () => { restart(); tick(); };
 loadSessions(null).then(tick);
 restart();
@@ -261,7 +292,7 @@ restart();
 
 
 def render_page():
-    labels = {k: T[k] for k in ("left", "input", "cached", "output", "reasoning", "updated")}
+    labels = {k: T[k] for k in ("left", "input", "cached", "output", "reasoning", "updated", "expand", "collapse")}
     return (PAGE.replace("__LANG__", _LANG)
                 .replace("__TITLE__", T["title"])
                 .replace("__TURNS__", T["turns"])
@@ -272,9 +303,9 @@ def render_page():
 def sessions_payload():
     """Rollout files grouped by project (cwd), newest project first.
 
-    Title is only a real conversation title (index thread_name or first user
-    message); sessions without one are omitted from the picker — the CLI
-    report can still name them via project/cwd fallback.
+    Only real conversations are listed: a session must have at least one
+    user message. Background sessions (e.g. Codex's automated "Guardian
+    review" runs) have none and are filtered out.
     """
     names = ccm.session_names()
     groups = {}
@@ -288,7 +319,8 @@ def sessions_payload():
             groups[proj] = []
             order.append(proj)
         groups[proj].append({"path": p, "name": title})
-    return [{"project": proj, "sessions": groups[proj]} for proj in order]
+    return [{"project": proj, "sessions": groups[proj]} for proj in order
+            if groups[proj]]
 
 
 def usage_payload(path=None):
