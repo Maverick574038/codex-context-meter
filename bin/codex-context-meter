@@ -24,6 +24,47 @@ SESSIONS_DIR = os.path.join(CODEX_DIR, "sessions")
 
 GREEN, YELLOW, RED, RESET = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
 
+# ------------------------------------------------------------------ i18n
+# 输出文案中英双语：CCM_LANG=en 强制英文，否则默认中文。
+# English output: set CCM_LANG=en (default is Chinese).
+
+_LANG = "en" if os.environ.get("CCM_LANG", "").lower().startswith("en") else "zh"
+
+S = {
+    "zh": {
+        "no_data": "⚪ 暂无 token 数据",
+        "no_sessions": "未找到会话记录：{dir}",
+        "session_empty": "最近的会话还没有 token 数据。",
+        "session_file": "会话文件：{path}",
+        "ctx": "上下文占用：{used} / {window}（已用 {pct}%，剩余 {left}）",
+        "ctx_no_window": "上下文占用：{used}（上下文窗口大小未知）",
+        "cum_header": "累计消耗 token（各轮累加；每轮的输入都会重新计入完整上下文）：",
+        "input": "  输入",
+        "cached": "  缓存命中输入",
+        "output": "  输出",
+        "reasoning": "  推理输出",
+        "total": "  总计",
+        "turns_header": "\n共 {n} 轮（每轮累计总量）：",
+        "turn_row": "  第 {i:>3} 轮：{v}",
+    },
+    "en": {
+        "no_data": "⚪ no token data yet",
+        "no_sessions": "No rollout files found in {dir}",
+        "session_empty": "Latest session has no token data yet.",
+        "session_file": "Session file: {path}",
+        "ctx": "Context usage : {used} / {window} ({pct}% used, {left} left)",
+        "ctx_no_window": "Context usage : {used} (context window size unknown)",
+        "cum_header": "Cumulative tokens (sum over all turns; input re-counts the context sent each turn):",
+        "input": "  input",
+        "cached": "  cached input",
+        "output": "  output",
+        "reasoning": "  reasoning output",
+        "total": "  total",
+        "turns_header": "\nTurns recorded: {n} (cumulative total per turn):",
+        "turn_row": "  turn {i:>3}: {v}",
+    },
+}[_LANG]
+
 
 def fmt_tokens(n):
     if n is None:
@@ -184,11 +225,11 @@ def statusline():
     try:
         u = get_usage()
         if not u or u.get("used") is None:
-            print("⚪ no token data yet")
+            print(S["no_data"])
             return
         used, window = u["used"], u.get("window") or DEFAULT_CONTEXT_WINDOW
         pct = round(100 * used / window) if window else None
-        print(f"{dot_for(pct)} {pct}% · {fmt_tokens(used)}/{fmt_tokens(window)} tokens")
+        print(f"{dot_for(pct)} {pct}% · {fmt_tokens(used)}/{fmt_tokens(window)}")
     except Exception:
         print("")
 
@@ -196,34 +237,35 @@ def statusline():
 def report(sessions_dir=SESSIONS_DIR):
     files = iter_rollout_files(sessions_dir)
     if not files:
-        print(f"No rollout files found in {sessions_dir}")
+        print(S["no_sessions"].format(dir=sessions_dir))
         return
     u = usage_from_rollout(files[-1])
     if not u:
-        print("Latest session has no token data yet.")
+        print(S["session_empty"])
         return
     used, window = u["used"], u.get("window")
     t = u["totals"]
     pct = round(100 * used / window) if (used and window) else None
-    print(f"Session file: {files[-1]}")
-    if window:
-        print(f"Context usage : {fmt_tokens(used)} / {fmt_tokens(window)}"
-              + (f" ({pct}% used, {fmt_tokens(max(0, window - used))} left)" if pct is not None else ""))
+    print(S["session_file"].format(path=files[-1]))
+    if window and pct is not None:
+        print(S["ctx"].format(used=fmt_tokens(used), window=fmt_tokens(window),
+                              pct=pct, left=fmt_tokens(max(0, window - used))))
     else:
-        print(f"Context usage : {fmt_tokens(used)} (context window size unknown)")
-    print("Cumulative tokens (sum over all turns; input re-counts the context sent each turn):")
-    for label, key in [("  input", "input_tokens"), ("  cached input", "cached_input_tokens"),
-                       ("  output", "output_tokens"), ("  reasoning output", "reasoning_output_tokens"),
-                       ("  total", "total_tokens")]:
+        print(S["ctx_no_window"].format(used=fmt_tokens(used)))
+    print(S["cum_header"])
+    for label, key in [("input", "input_tokens"), ("cached", "cached_input_tokens"),
+                       ("output", "output_tokens"), ("reasoning", "reasoning_output_tokens"),
+                       ("total", "total_tokens")]:
         v = t.get(key)
         if isinstance(v, int):
-            print(f"{label:20s} {v:,}")
+            print(f"{S[label]:16s} {v:,}")
     per_turn = u.get("per_turn") or []
     if per_turn:
-        print(f"\nTurns recorded: {len(per_turn)} (total tokens per turn):")
+        print(S["turns_header"].format(n=len(per_turn)))
         for i, tu in enumerate(per_turn[-20:], start=max(1, len(per_turn) - 19)):
-            tt = tu.get("total_tokens", "?")
-            print(f"  turn {i:>3}: {tt:,}" if isinstance(tt, int) else f"  turn {i:>3}: ?")
+            tt = tu.get("total_tokens")
+            v = f"{tt:,}" if isinstance(tt, int) else "?"
+            print(S["turn_row"].format(i=i, v=v))
 
 
 def main():

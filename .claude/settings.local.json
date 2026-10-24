@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x ~/Codex上下文插件/bin/codex-context-meter-en)",
+      "Bash(~/Codex上下文插件/bin/codex-context-meter report *)",
+      "Bash(~/Codex上下文插件/bin/codex-context-meter-en report *)"
+    ]
+  }
+}

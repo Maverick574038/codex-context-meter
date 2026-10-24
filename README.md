@@ -1,64 +1,65 @@
 # codex-context-meter
 
-一个 Codex CLI 状态栏插件：在聊天输入框下方实时显示**当前对话的上下文占用**和 **token 消耗**——彩色小圆圈（🟢 <60% / 🟡 60–85% / 🔴 >85%）+ 百分比 + 用量。另附 `report` 命令输出详细 token 分类统计。
+[English README → README.en.md](README.en.md)
 
-A Codex CLI status-line plugin that shows live context-window usage and token consumption below the chat input box, plus a detailed `report` command.
+一个 Codex 上下文用量插件：实时反映**当前对话的上下文占用**和 **token 消耗**。提供两个版本：
 
-## 预览 / Preview
+- **`bin/codex-context-meter`** — 中文版（默认）
+- **`bin/codex-context-meter-en`** — 英文版（同一逻辑，英文输出）
 
-```
-🟢 32% · 64.2k/200k tokens
-```
+## 功能
 
-## 安装 / Install
+### 1. 状态栏模式（终端版 Codex CLI）
+
+在聊天输入框下方显示：`🟢 37% · 73.5k/200k`
+
+- 🟢 <60% / 🟡 60–85% / 🔴 >85%
+- 通过 `tui.status_line` 配置接入，仅对**终端版 Codex CLI** 生效（桌面应用不渲染该状态区域）
+
+### 2. 详细报告（桌面端/CLI 通用）
 
 ```bash
-git clone https://github.com/<you>/codex-context-meter.git
+bin/codex-context-meter report        # 中文
+bin/codex-context-meter-en report     # English
+```
+
+输出：当前上下文占用（已用/总量/百分比/剩余）、累计输入/缓存命中/输出/推理 token、逐轮趋势。桌面端用户直接用它即可。
+
+## 安装
+
+```bash
+git clone https://github.com/Maverick574038/codex-context-meter.git
 cd codex-context-meter
-./install.sh
+./install.sh            # 配置终端 CLI 状态栏（可选）
 ```
 
-`install.sh` 会把下面这段写入 `~/.codex/config.toml`（已有 `status_line` 时会先备份并提示手动替换，绝不静默覆盖）：
-
-```toml
-[tui]
-status_line = ["/path/to/codex-context-meter/bin/codex-context-meter"]
-```
-
-重启 Codex 即可。
-
-## 数据来源 / How it works
-
-按优先级自动选择（任一可用即可）：
-
-1. Codex `tui.status_line` 钩子通过 **stdin** 传入的会话 JSON；
-2. 最新的会话 rollout 文件 `~/.codex/sessions/**/*.jsonl` 中的 `token_count` / `turn_context` 事件（含 `total_token_usage`、`model_context_window`）。
-
-任何解析失败都静默降级为空行，绝不影响 Codex 主界面。
-
-## 详细报告 / Detailed report
+桌面端无需安装，直接跑 `report`。建议加个别名：
 
 ```bash
-bin/codex-context-meter report
+echo 'alias cx="~/Codex上下文插件/bin/codex-context-meter report"' >> ~/.zshrc
 ```
 
-输出：当前上下文占用（已用/总量/百分比/剩余）、累计 input / cached input / output / reasoning token、逐 turn 趋势。
+`install.sh` 会幂等写入 `~/.codex/config.toml` 的 `tui.status_line`，已有配置先备份不覆盖。
 
-## 环境变量
+## 数据来源
 
-- `CODEX_HOME`：覆盖 Codex 配置目录（默认 `~/.codex`）。
-- `--sessions-dir <dir>`：`report` 模式指定会话目录（用于测试）。
+按优先级自动选择：
+1. `tui.status_line` 钩子经 stdin 传入的会话 JSON（CLI 实时）
+2. 最新 rollout 文件 `~/.codex/sessions/**/*.jsonl` 的 `token_count` / `turn_context` 事件（桌面端与 CLI 都写）
 
-## 兼容性说明
+「上下文占用」取最后一轮请求的真实 token 量，不采用累计值。桌面端数据有几分钟级落盘延迟属正常现象。
 
-- Codex 桌面端没有独立的 UI 插件 API；本插件走官方 `tui.status_line` 通道，在渲染该状态区域的版本（含内嵌 TUI 的桌面端）中生效。若升级后无显示，请确认你的版本支持 `tui.status_line`。
-- 不同版本 rollout 文件字段可能有变动：解析器宽松匹配字段名，缺失时显示 `?` 而非报错。
+## 环境变量 / 参数
 
-## 开发自测 / Self-test
+- `CODEX_HOME`：覆盖 Codex 配置目录（默认 `~/.codex`）
+- `CCM_LANG=en`：强制英文输出
+- `--sessions-dir <dir>`：report 模式指定会话目录（测试用）
+
+## 自测
 
 ```bash
-python3 bin/codex-context-meter report --sessions-dir tests/fixtures
-echo '{"context_window":200000,"tokens_in_context":90000}' | python3 bin/codex-context-meter
+bin/codex-context-meter report --sessions-dir tests/fixtures
+echo '{"context_window":200000,"tokens_in_context":90000}' | bin/codex-context-meter
 ```
 
 ## License
