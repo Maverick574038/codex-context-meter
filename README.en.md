@@ -2,20 +2,24 @@
 
 [中文 README → README.md](README.md)
 
-A Codex context-usage plugin that reflects **the current conversation's context-window occupancy** and **token consumption**. Two executables:
+A Codex context-usage plugin that reflects **the current conversation's context-window occupancy** and **token consumption**. Available on macOS and Windows:
 
-- **`bin/codex-context-meter-en`** — English version
-- **`bin/codex-context-meter`** — Chinese version (same logic, Chinese output)
-- **`bin/codex-context-meter-gui-en`** — always-on web dashboard (English)
-- **`bin/codex-context-meter-gui`** — always-on web dashboard (中文)
-- **`bin/codex-context-meter-float-en`** — floating desktop widget (English)
-- **`bin/codex-context-meter-float`** — floating desktop widget (中文)
+| Platform | Form | 中文 | English |
+|---|---|---|---|
+| macOS | Terminal CLI | `bin/macos-codex-context-meter` | `bin/macos-codex-context-meter-en` |
+| macOS | Web dashboard | `bin/macos-codex-context-meter-gui` | `bin/macos-codex-context-meter-gui-en` |
+| macOS | Floating widget | `bin/macos-codex-context-meter-float` | `bin/macos-codex-context-meter-float-en` |
+| Windows | Terminal CLI | `bin/windows-codex-context-meter.bat` | `bin/windows-codex-context-meter-en.bat` |
+| Windows | Web dashboard | `bin/windows-codex-context-meter-gui.bat` | `bin/windows-codex-context-meter-gui-en.bat` |
+| Windows | Floating widget | `bin/windows-codex-context-meter-float.vbs` (double-click, no console) | `bin/windows-codex-context-meter-float-en.bat` |
+
+Windows requires Python 3 (the official installer includes tkinter by default).
 
 ### 4. Floating desktop widget (no browser)
 
 ```bash
-bin/codex-context-meter-float-en      # English
-bin/codex-context-meter-float         # 中文
+bin/macos-codex-context-meter-float-en      # English
+bin/macos-codex-context-meter-float         # 中文
 ```
 
 A borderless, always-on-top, semi-transparent widget: colored ring + percentage + usage/remaining, project→session dropdowns, ⟳ refresh, auto-updates every 3s, drag anywhere to move it. Zero dependencies (Tkinter ships with macOS).
@@ -23,8 +27,8 @@ A borderless, always-on-top, semi-transparent widget: colored ring + percentage 
 ### 3. Always-on dashboard (GUI, recommended for the desktop app)
 
 ```bash
-bin/codex-context-meter-gui-en        # English, opens your browser
-bin/codex-context-meter-gui           # 中文
+bin/macos-codex-context-meter-gui-en        # English, opens your browser
+bin/macos-codex-context-meter-gui           # 中文
 ```
 
 Serves a local page at `http://localhost:8787`: colored ring (green/yellow/red) + percentage + progress bar + per-category stats + per-turn trend chart, **auto-refreshing every 3 seconds**. Keep the browser tab around; `--port` changes the port, Ctrl+C quits. Zero third-party dependencies (Python's built-in HTTP server).
@@ -41,8 +45,8 @@ Shows below the chat input box: `🟢 37% · 73.5k/200k`
 ### 2. Detailed report (desktop app & CLI)
 
 ```bash
-bin/codex-context-meter-en report     # English
-bin/codex-context-meter report        # 中文
+bin/macos-codex-context-meter-en report     # English
+bin/macos-codex-context-meter report        # 中文
 ```
 
 Prints: current context usage (used / total / percent / remaining), cumulative input / cached-input / output / reasoning tokens, and a per-turn trend. Desktop-app users: this is the mode for you.
@@ -52,13 +56,13 @@ Prints: current context usage (used / total / percent / remaining), cumulative i
 ```bash
 git clone https://github.com/Maverick574038/codex-context-meter.git
 cd codex-context-meter
-./install.sh            # configures the CLI status line (optional)
+./macos-install.sh            # configures the CLI status line (optional)
 ```
 
 No install needed for desktop use — just run `report`. Handy alias:
 
 ```bash
-echo 'alias cx="~/Codex上下文插件/bin/codex-context-meter-en report"' >> ~/.zshrc
+echo 'alias cx="~/Codex上下文插件/bin/macos-codex-context-meter-en report"' >> ~/.zshrc
 ```
 
 `install.sh` idempotently writes `tui.status_line` into `~/.codex/config.toml`; an existing entry is backed up, never silently overwritten.
@@ -80,8 +84,8 @@ First hit wins:
 ## Self-test
 
 ```bash
-bin/codex-context-meter-en report --sessions-dir tests/fixtures
-echo '{"context_window":200000,"tokens_in_context":90000}' | bin/codex-context-meter-en
+bin/macos-codex-context-meter-en report --sessions-dir tests/fixtures
+echo '{"context_window":200000,"tokens_in_context":90000}' | bin/macos-codex-context-meter-en
 ```
 
 ## License

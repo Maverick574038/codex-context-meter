@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# macos-codex-context-meter-en — English wrapper for macos-codex-context-meter.
+# Same logic; forces English output via CCM_LANG=en.
+exec env CCM_LANG=en "$(dirname "$0")/macos-codex-context-meter" "$@"

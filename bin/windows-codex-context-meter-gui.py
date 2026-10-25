@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import importlib.util
 from importlib.machinery import SourceFileLoader
 
-_core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codex-context-meter")
+_core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "windows-codex-context-meter.py")
 _spec = importlib.util.spec_from_loader("ccm_core", SourceFileLoader("ccm_core", _core))
 ccm = importlib.util.module_from_spec(_spec)
 sys.modules["ccm_core"] = ccm

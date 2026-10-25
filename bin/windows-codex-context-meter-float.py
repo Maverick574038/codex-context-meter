@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""codex-context-meter-float — 桌面悬浮窗用量指示器（Windows 中文版）。
+
+零依赖（macOS 自带 Tkinter）：无边框置顶悬浮窗，彩色圆环 + 百分比，
+项目/会话级联菜单（tk.Menu，无 grab 卡死问题），每 3 秒自动刷新。
+可拖动，✕ 关闭。
+
+用法：
+  bin/codex-context-meter-float
+英文版：bin/codex-context-meter-float-en（CCM_LANG=en）
+"""
+
+import os
+import sys
+import tkinter as tk
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import importlib.util
+from importlib.machinery import SourceFileLoader
+
+_core = os.path.join(os.path.dirname(os.path.abspath(__file__)), "windows-codex-context-meter.py")
+_spec = importlib.util.spec_from_loader("ccm_core", SourceFileLoader("ccm_core", _core))
+ccm = importlib.util.module_from_spec(_spec)
+sys.modules["ccm_core"] = ccm
+_spec.loader.exec_module(ccm)
+
+_LANG = "en" if os.environ.get("CCM_LANG", "").lower().startswith("en") else "zh"
+
+T = {
+    "zh": {
+        "title": "Codex 用量",
+        "no_data": "暂无数据",
+        "left": "剩余",
+        "total": "累计消耗",
+        "pick": "选择会话 ▾",
+    },
+    "en": {
+        "title": "Codex Meter",
+        "no_data": "no data",
+        "left": "left",
+        "total": "Total",
+        "pick": "Pick session ▾",
+    },
+}[_LANG]
+
+GREEN, YELLOW, RED = "#34c759", "#ffd60a", "#ff453a"
+BG, FG, DIM = "#1c1e24", "#e6e6e6", "#9aa0aa"
+BTN = dict(bd=0, bg=BG, fg=FG, activebackground=BG, activeforeground=FG,
+           highlightthickness=0, relief="flat")
+
+
+def ring_color(pct):
+    return GREEN if pct < 60 else YELLOW if pct < 85 else RED
+
+
+def _lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def _hex_lerp(c1, c2, t):
+    a = tuple(int(c1[i:i+2], 16) for i in (1, 3, 5))
+    b = tuple(int(c2[i:i+2], 16) for i in (1, 3, 5))
+    return "#" + "".join(f"{int(_lerp(x, y, t)):02x}" for x, y in zip(a, b))
+
+
+def color_mix(pct):
+    """Smooth gradient green→yellow→red across 0..100."""
+    pct = max(0, min(100, pct))
+    if pct < 60:
+        return _hex_lerp(GREEN, YELLOW, pct / 60)
+    return _hex_lerp(YELLOW, RED, (pct - 60) / 40)
+
+
+class FloatMeter(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(T["title"])
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        try:
+            self.attributes("-alpha", 0.92)
+        except tk.TclError:
+            pass
+        self.configure(bg=BG)
+        self.geometry("+60+60")
+
+        self._drag = None
+        self._session_path = None
+        self._groups = {}
+        self._disp_pct = 0.0   # 动画中当前显示的百分比
+        self._anim_job = None
+
+        self._build()
+        self.after(200, self._refresh)
+        self._schedule()
+
+    # ------------------------------------------------------------ UI
+
+    def _build(self):
+        top = tk.Frame(self, bg=BG)
+        top.pack(fill="x", padx=6, pady=(6, 0))
+
+        self.pick_btn = tk.Button(top, text=T["pick"], command=self._open_menu, **BTN)
+        self.pick_btn.pack(side="left")
+        refresh = tk.Button(top, text="⟳", fg="#000000", command=self._refresh,
+                            **{k: v for k, v in BTN.items() if k != "fg"})
+        refresh.pack(side="left", padx=(4, 0))
+        close = tk.Button(top, text="✕", fg=DIM, command=self.destroy,
+                          **{k: v for k, v in BTN.items() if k != "fg"})
+        close.pack(side="right")
+        for b, hov in ((self.pick_btn, FG), (refresh, FG), (close, FG)):
+            b.bind("<Enter>", lambda e, b=b: b.config(fg="#ffffff"))
+            b.bind("<Leave>", lambda e, b=b, c=hov if b is self.pick_btn else ("#000000" if b is refresh else DIM): b.config(fg=c))
+
+        mid = tk.Frame(self, bg=BG)
+        mid.pack(padx=10, pady=8)
+
+        self.canvas = tk.Canvas(mid, width=110, height=110, bg=BG, highlightthickness=0)
+        self.canvas.pack(side="left")
+        self.canvas.create_arc(8, 8, 102, 102, start=90, extent=-360,
+                               style="arc", outline="#2a2e36", width=10)
+        self.arc = self.canvas.create_arc(8, 8, 102, 102, start=90, extent=0,
+                                          style="arc", outline=GREEN, width=10)
+        self.pct_txt = self.canvas.create_text(55, 55, text="–", fill=FG,
+                                               font=("Helvetica", 22, "bold"))
+
+        detail = tk.Frame(mid, bg=BG)
+        detail.pack(side="left", padx=(12, 0))
+        self.used_lbl = tk.Label(detail, text="", bg=BG, fg=FG, font=("Helvetica", 13, "bold"))
+        self.used_lbl.pack(anchor="w")
+        self.left_lbl = tk.Label(detail, text="", bg=BG, fg=DIM, font=("Helvetica", 11))
+        self.left_lbl.pack(anchor="w")
+        self.total_lbl = tk.Label(detail, text="", bg=BG, fg=DIM, font=("Helvetica", 11))
+        self.total_lbl.pack(anchor="w")
+
+        self.sess_lbl = tk.Label(self, text="", bg=BG, fg=DIM, font=("Helvetica", 10))
+        self.sess_lbl.pack(padx=10, pady=(0, 6), anchor="w")
+
+        for w in (self, top, mid, detail, self.canvas):
+            w.bind("<ButtonPress-1>", self._drag_start)
+            w.bind("<B1-Motion>", self._drag_move)
+
+    # ------------------------------------------------------------ menu
+
+    def _open_menu(self):
+        menu = tk.Menu(self, tearoff=0)
+        for project in self._order:
+            sub = tk.Menu(menu, tearoff=0)
+            for title, path in self._groups[project]:
+                sub.add_command(label=title,
+                                command=lambda p=path: self._select(p))
+            menu.add_cascade(label=project, menu=sub)
+        try:
+            x = self.pick_btn.winfo_rootx()
+            y = self.pick_btn.winfo_rooty() + self.pick_btn.winfo_height()
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _select(self, path):
+        self._session_path = path
+        self.after_idle(self._refresh)
+
+    # ------------------------------------------------------------ drag
+
+    def _drag_start(self, e):
+        self._drag = (e.x_root - self.winfo_x(), e.y_root - self.winfo_y())
+
+    def _drag_move(self, e):
+        if self._drag:
+            self.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
+
+    # ------------------------------------------------------------ data
+
+    def _schedule(self):
+        self.after(3000, self._tick)
+
+    def _tick(self):
+        self._refresh()
+        self._schedule()
+
+    def _load_groups(self):
+        names = ccm.session_names()
+        groups, order = {}, []
+        for p in reversed(ccm.iter_rollout_files(ccm.SESSIONS_DIR)):
+            title, project = ccm.session_info(p, names)
+            if not title:
+                continue
+            proj = project or "?"
+            if proj not in groups:
+                groups[proj] = []
+                order.append(proj)
+            groups[proj].append((title, p))
+        self._groups, self._order = groups, order
+
+    def _update_session_label(self, path):
+        for project in self._order:
+            for title, p in self._groups.get(project, []):
+                if p == path:
+                    self.sess_lbl.config(text=f"{project}：{title}")
+                    return
+        self.sess_lbl.config(text="")
+
+    def _refresh(self):
+        if not self._groups:
+            self._load_groups()
+        files = ccm.iter_rollout_files(ccm.SESSIONS_DIR)
+        target = self._session_path or (files[-1] if files else None)
+        if not target or not os.path.isfile(target):
+            self.canvas.itemconfig(self.pct_txt, text="–")
+            self.used_lbl.config(text=T["no_data"])
+            self.left_lbl.config(text="")
+            self.total_lbl.config(text="")
+            self.sess_lbl.config(text="")
+            return
+        self._update_session_label(target)
+        u = ccm.usage_from_rollout(target)
+        if not u or u.get("used") is None:
+            self.canvas.itemconfig(self.pct_txt, text="–")
+            self.used_lbl.config(text=T["no_data"])
+            self.left_lbl.config(text="")
+            self.total_lbl.config(text="")
+            return
+        used, window = u["used"], u.get("window")
+        pct = round(100 * used / window) if (used and window) else None
+        if pct is None:
+            self.canvas.itemconfig(self.pct_txt, text="–")
+            self.used_lbl.config(text=ccm.fmt_tokens(used))
+            self.left_lbl.config(text="")
+            return
+        col = color_mix(pct)
+        self._animate_to(pct, col)
+        self.used_lbl.config(text=f"{ccm.fmt_tokens(used)} / {ccm.fmt_tokens(window)}")
+        self.left_lbl.config(text=f"{T['left']} {ccm.fmt_tokens(max(0, window - used))}")
+        total = (u.get("totals") or {}).get("total_tokens")
+        self.total_lbl.config(
+            text=f"{T['total']} {total:,}" if isinstance(total, int) else "")
+
+    # ------------------------------------------------------------ animation
+
+    def _animate_to(self, target_pct, _col):
+        """Ease the ring/percentage from the displayed value to the target."""
+        if self._anim_job is not None:
+            self.after_cancel(self._anim_job)
+            self._anim_job = None
+        start = self._disp_pct
+        delta = target_pct - start
+        if abs(delta) < 0.5:
+            self._render_ring(target_pct)
+            return
+        steps = 24
+        self._step = 0
+
+        def frame():
+            self._step += 1
+            t = self._step / steps
+            t = 1 - (1 - t) ** 3          # ease-out cubic
+            self._render_ring(start + delta * t)
+            if self._step < steps:
+                self._anim_job = self.after(16, frame)
+            else:
+                self._anim_job = None
+
+        frame()
+
+    def _render_ring(self, pct):
+        self._disp_pct = pct
+        col = color_mix(pct)
+        self.canvas.itemconfig(self.arc, extent=-360 * min(pct, 100) / 100, outline=col)
+        self.canvas.itemconfig(self.pct_txt, text=f"{round(pct)}%", fill=col)
+
+
+def main():
+    FloatMeter().mainloop()
+
+
+if __name__ == "__main__":
+    main()
