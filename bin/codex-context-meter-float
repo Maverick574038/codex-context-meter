@@ -133,6 +133,9 @@ class FloatMeter(tk.Tk):
         self.total_lbl = tk.Label(detail, text="", bg=BG, fg=DIM, font=("Helvetica", 11))
         self.total_lbl.pack(anchor="w")
 
+        self.sess_lbl = tk.Label(self, text="", bg=BG, fg=DIM, font=("Helvetica", 10))
+        self.sess_lbl.pack(padx=10, pady=(0, 6), anchor="w")
+
         for w in (self, top, mid, detail, self.canvas):
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>", self._drag_move)
@@ -190,6 +193,14 @@ class FloatMeter(tk.Tk):
             groups[proj].append((title, p))
         self._groups, self._order = groups, order
 
+    def _update_session_label(self, path):
+        for project in self._order:
+            for title, p in self._groups.get(project, []):
+                if p == path:
+                    self.sess_lbl.config(text=f"{project}：{title}")
+                    return
+        self.sess_lbl.config(text="")
+
     def _refresh(self):
         if not self._groups:
             self._load_groups()
@@ -199,7 +210,10 @@ class FloatMeter(tk.Tk):
             self.canvas.itemconfig(self.pct_txt, text="–")
             self.used_lbl.config(text=T["no_data"])
             self.left_lbl.config(text="")
+            self.total_lbl.config(text="")
+            self.sess_lbl.config(text="")
             return
+        self._update_session_label(target)
         u = ccm.usage_from_rollout(target)
         if not u or u.get("used") is None:
             self.canvas.itemconfig(self.pct_txt, text="–")
