@@ -84,7 +84,12 @@ PAGE = """<!doctype html>
          background: radial-gradient(1200px 600px at 50% -10%, #1d2027 0%, #14161b 60%);
          color: #e6e6e6; min-height: 100vh;
          display: flex; flex-direction: column; align-items: center;
-         padding: 32px 16px 40px; gap: 22px; }
+         padding: 32px 16px 40px; gap: 22px; overflow-x: hidden; }
+  /* 背景彩色光斑，配合面板的 backdrop-filter 形成高斯模糊层次 */
+  .glow { position: fixed; border-radius: 50%; filter: blur(90px);
+          pointer-events: none; z-index: -1; opacity: .5; }
+  .glow.a { width: 420px; height: 420px; background: #3d6bdf; top: -120px; left: -80px; }
+  .glow.b { width: 360px; height: 360px; background: #7b3ddf; bottom: -100px; right: -60px; }
   h1 { font-size: 17px; font-weight: 600; color: #8b919c; letter-spacing: 2px;
        text-transform: uppercase; }
   .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
@@ -92,12 +97,12 @@ PAGE = """<!doctype html>
   select, button { background: rgba(30,33,40,.8); color: #e6e6e6;
                    border: 1px solid #2e323c; border-radius: 12px;
                    padding: 8px 14px; font-size: 13px; font-family: inherit;
-                   backdrop-filter: blur(8px); transition: border-color .2s, box-shadow .2s; }
+                   backdrop-filter: blur(18px) saturate(1.3); transition: border-color .2s, box-shadow .2s; }
   select#sess { max-width: min(400px, 55vw); }
   button { cursor: pointer; }
   button:hover, select:hover { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91,140,255,.15); }
   .panel { background: rgba(30,33,40,.75); border: 1px solid #2e323c;
-           border-radius: 20px; padding: 24px 28px; backdrop-filter: blur(12px);
+           border-radius: 20px; padding: 24px 28px; backdrop-filter: blur(24px) saturate(1.4);
            box-shadow: 0 8px 32px rgba(0,0,0,.35);
            width: min(680px, 94vw); }
   .ring-row { display: flex; align-items: center; gap: 32px; flex-wrap: wrap;
@@ -119,14 +124,14 @@ PAGE = """<!doctype html>
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
            gap: 12px; width: min(680px, 94vw); }
   .card { background: rgba(30,33,40,.75); border: 1px solid #2e323c;
-          border-radius: 16px; padding: 14px 16px; backdrop-filter: blur(8px);
+          border-radius: 16px; padding: 14px 16px; backdrop-filter: blur(18px) saturate(1.3);
           transition: transform .2s, border-color .2s; }
   .card:hover { transform: translateY(-2px); border-color: #3a4050; }
   .card .k { font-size: 12px; color: #8b919c; }
   .card .v { font-size: 21px; margin-top: 6px; font-variant-numeric: tabular-nums; font-weight: 600; }
   .trend { width: min(680px, 94vw); background: rgba(30,33,40,.75);
            border: 1px solid #2e323c; border-radius: 20px; padding: 18px 20px;
-           backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0,0,0,.35); }
+           backdrop-filter: blur(24px) saturate(1.4); box-shadow: 0 8px 32px rgba(0,0,0,.35); }
   .trend h2 { font-size: 12px; color: #8b919c; font-weight: 500; margin-bottom: 12px;
               letter-spacing: 1px; text-transform: uppercase; }
   .bars { display: flex; align-items: flex-end; gap: 4px; height: 90px; }
@@ -138,6 +143,8 @@ PAGE = """<!doctype html>
 </style>
 </head>
 <body>
+<div class="glow a"></div>
+<div class="glow b"></div>
 <h1>__TITLE__</h1>
 <div class="controls">
   <select id="proj"></select>
