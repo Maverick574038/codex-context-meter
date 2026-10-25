@@ -89,10 +89,6 @@ class FloatMeter(tk.Tk):
         self.title(T["title"])
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        try:
-            self.attributes("-alpha", 0.92)
-        except tk.TclError:
-            pass
         self.configure(bg=BG)
         self.geometry("+60+60")
 
