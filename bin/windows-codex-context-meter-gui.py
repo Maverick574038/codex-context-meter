@@ -81,49 +81,60 @@ PAGE = """<!doctype html>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; }
   body { font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif;
-         background: #16181d; color: #e6e6e6; min-height: 100vh;
+         background: radial-gradient(1200px 600px at 50% -10%, #1d2027 0%, #14161b 60%);
+         color: #e6e6e6; min-height: 100vh;
          display: flex; flex-direction: column; align-items: center;
-         padding: 28px 16px; gap: 20px; }
-  h1 { font-size: 18px; font-weight: 600; color: #9aa0aa; letter-spacing: .5px; }
-  .session { font-size: 15px; color: #c9cdd4; max-width: 640px;
-             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ring-row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+         padding: 32px 16px 40px; gap: 22px; }
+  h1 { font-size: 17px; font-weight: 600; color: #8b919c; letter-spacing: 2px;
+       text-transform: uppercase; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+              justify-content: center; width: min(680px, 94vw); }
+  select, button { background: rgba(30,33,40,.8); color: #e6e6e6;
+                   border: 1px solid #2e323c; border-radius: 12px;
+                   padding: 8px 14px; font-size: 13px; font-family: inherit;
+                   backdrop-filter: blur(8px); transition: border-color .2s, box-shadow .2s; }
+  select#sess { max-width: min(400px, 55vw); }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91,140,255,.15); }
+  .panel { background: rgba(30,33,40,.75); border: 1px solid #2e323c;
+           border-radius: 20px; padding: 24px 28px; backdrop-filter: blur(12px);
+           box-shadow: 0 8px 32px rgba(0,0,0,.35);
+           width: min(680px, 94vw); }
+  .ring-row { display: flex; align-items: center; gap: 32px; flex-wrap: wrap;
               justify-content: center; }
-  .ring-wrap { position: relative; width: 200px; height: 200px; flex-shrink: 0; }
+  .ring-wrap { position: relative; width: 190px; height: 190px; flex-shrink: 0; }
   svg { transform: rotate(-90deg); }
-  .ring-bg { stroke: #2a2e36; }
-  .ring { stroke-linecap: round; transition: stroke-dashoffset .6s ease, stroke .6s; }
+  .ring-bg { stroke: #262a33; }
+  .ring { stroke-linecap: round; transition: stroke-dashoffset .7s cubic-bezier(.22,1,.36,1), stroke .7s; }
   .pct { position: absolute; inset: 0; display: flex; align-items: center;
          justify-content: center; }
-  .pct b { font-size: 42px; font-variant-numeric: tabular-nums; }
+  .pct b { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .detail { text-align: left; min-width: 180px; }
-  .detail .u { font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 600; }
-  .detail .l { font-size: 13px; color: #9aa0aa; margin-top: 6px; }
-  .bar { width: min(640px, 92vw); height: 10px; background: #2a2e36;
-         border-radius: 5px; overflow: hidden; }
-  .bar i { display: block; height: 100%; border-radius: 5px;
-           transition: width .6s ease, background .6s; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-           gap: 10px; width: min(640px, 92vw); }
-  .card { background: #1e2128; border: 1px solid #2a2e36; border-radius: 10px;
-          padding: 12px 14px; }
-  .card .k { font-size: 12px; color: #9aa0aa; }
-  .card .v { font-size: 20px; margin-top: 4px; font-variant-numeric: tabular-nums; }
-  .trend { width: min(640px, 92vw); background: #1e2128; border: 1px solid #2a2e36;
-           border-radius: 10px; padding: 14px; }
-  .trend h2 { font-size: 13px; color: #9aa0aa; font-weight: 500; margin-bottom: 10px; }
+  .detail .u { font-size: 24px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .detail .l { font-size: 13px; color: #9aa0aa; margin-top: 8px; }
+  .bar { width: min(680px, 94vw); height: 8px; background: #262a33;
+         border-radius: 999px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 999px;
+           transition: width .7s cubic-bezier(.22,1,.36,1), background .7s; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+           gap: 12px; width: min(680px, 94vw); }
+  .card { background: rgba(30,33,40,.75); border: 1px solid #2e323c;
+          border-radius: 16px; padding: 14px 16px; backdrop-filter: blur(8px);
+          transition: transform .2s, border-color .2s; }
+  .card:hover { transform: translateY(-2px); border-color: #3a4050; }
+  .card .k { font-size: 12px; color: #8b919c; }
+  .card .v { font-size: 21px; margin-top: 6px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .trend { width: min(680px, 94vw); background: rgba(30,33,40,.75);
+           border: 1px solid #2e323c; border-radius: 20px; padding: 18px 20px;
+           backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0,0,0,.35); }
+  .trend h2 { font-size: 12px; color: #8b919c; font-weight: 500; margin-bottom: 12px;
+              letter-spacing: 1px; text-transform: uppercase; }
   .bars { display: flex; align-items: flex-end; gap: 4px; height: 90px; }
-  .bars i { flex: 1; background: #3d7bfd; border-radius: 3px 3px 0 0; min-height: 2px;
-            opacity: .85; transition: height .4s; }
-  .meta { font-size: 12px; color: #6b7078; }
-  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-              justify-content: center; width: min(640px, 92vw); }
-  select, button { background: #1e2128; color: #e6e6e6; border: 1px solid #2a2e36;
-                   border-radius: 8px; padding: 7px 12px; font-size: 13px;
-                   font-family: inherit; }
-  select#sess { max-width: min(420px, 60vw); }
-  button { cursor: pointer; }
-  button:hover, select:hover { border-color: #3d7bfd; }
+  .bars i { flex: 1; background: linear-gradient(180deg, #5b8cff, #3d6bdf);
+            border-radius: 4px 4px 2px 2px; min-height: 2px; opacity: .9;
+            transition: height .5s cubic-bezier(.22,1,.36,1); }
+  .bars i:hover { opacity: 1; }
+  .meta { font-size: 12px; color: #5d636d; }
 </style>
 </head>
 <body>
@@ -139,17 +150,19 @@ PAGE = """<!doctype html>
     <option value="30000">30s</option>
   </select>
 </div>
-<div class="ring-row">
-  <div class="ring-wrap">
-    <svg width="200" height="200">
-      <circle class="ring-bg" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
-      <circle class="ring" id="ring" cx="100" cy="100" r="86" fill="none" stroke-width="14"/>
-    </svg>
-    <div class="pct"><b id="pct">–</b></div>
-  </div>
-  <div class="detail">
-    <div class="u" id="used"></div>
-    <div class="l" id="leftline"></div>
+<div class="panel">
+  <div class="ring-row">
+    <div class="ring-wrap">
+      <svg width="190" height="190" viewBox="0 0 190 190">
+        <circle class="ring-bg" cx="95" cy="95" r="81" fill="none" stroke-width="14"/>
+        <circle class="ring" id="ring" cx="95" cy="95" r="81" fill="none" stroke-width="14"/>
+      </svg>
+      <div class="pct"><b id="pct">–</b></div>
+    </div>
+    <div class="detail">
+      <div class="u" id="used"></div>
+      <div class="l" id="leftline"></div>
+    </div>
   </div>
 </div>
 <div class="bar"><i id="bar"></i></div>
@@ -157,7 +170,7 @@ PAGE = """<!doctype html>
 <div class="trend"><h2>__TURNS__</h2><div class="bars" id="bars"></div></div>
 <div class="meta" id="meta"></div>
 <script>
-const C = 2 * Math.PI * 86;
+const C = 2 * Math.PI * 81;
 const labels = __LABELS__;
 let timer = null;
 let groups = [];
